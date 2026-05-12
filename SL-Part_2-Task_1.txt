@@ -1,0 +1,64 @@
+Presentación
+El objetivo de este ejercicio es comprender cómo aprende una red neuronal, combinando:
+• cálculos numéricos (a mano)
+• implementación en Python o R
+Descripción del problema
+Consideraremos una red neuronal feedforward con:
+• 2 variables de entrada x1, x2
+• 1 capa oculta con 2 neuronas
+• 1 neurona de salida
+Todas las neuronas utilizan la función de activación sigmoidea.
+Datos para el entrenamiento
+La primera parte es visualizar como se entrena la red por lo que debéis definir
+• Valores iniciales de pesos y sesgos (bias).
+• Valor de la tasa de aprendizaje η
+
+Cada grupo deberá inicializar los pesos y sesgos de forma aleatoria utilizando una semilla propia.
+Se recomienda usar como semilla un identificador único (por ejemplo, DNI o número de grupo).
+Los pesos deben generarse en el intervalo [−0.2, 0.2] y los sesgos en [−0.05, 0.05].
+Tened en cuenta que valores pequeños de los pesos ayudan a evitar la saturación de la función sigmoide al
+inicio del entrenamiento.
+• Una única observación bivariante extraída aleatoriamente del conjunto de datos Admissions-csv
+(x1, x2, y)
+Tareas
+Utilizad las fórmulas siguientes para el cálculo de cada paso de la red:
+Forward propagation (Iteración 1)
+Calcula manualmente:
+• Capa oculta:
+– preactivaciones z^(1)
+– activaciones a^(1)
+• Capa de salida:
+– preactivación z^(2)
+– predicción yˆ
+
+Cálculo de la función de pérdida
+Utilizamos como función de pérdida la binary cross-entropy:
+L(y, yˆ) = − [y log(yˆ) + (1 − y) log(1 − yˆ)]
+Backpropagation (Iteración 1)
+Calcula paso a paso:
+• Error en la capa de salida:
+δ^(2) = yˆ − y
+Esta expresión es válida al combinar la función sigmoide con la cross-entropy.
+• Error en la capa oculta:
+δ^(1) = (W(2))^T δ^(2)· σ′(z^(1))
+Donde, para la función sigmoidea se tiene que:
+σ′(z) = σ(z)(1 − σ(z))
+## Actualización de pesos
+Con los valores calculados podemos actualizar todos los pesos y sesgos usando:
+W ← W − η *(∂L/∂W) , b ← b − η*(∂L/∂b)
+
+Segunda iteración
+Repetid los pasos 1–4 utilizando los parámetros actualizados. Verificad que la función de pérdida disminuye.
+
+Implementación
+Utilizando el notebook proporcionado (basado en el ejemplo de Iris):
+• Adaptad el código para reproducir los mismos cálculos
+• Verificad que:
+– los resultados coinciden con los cálculos manuales
+– la función de pérdida disminuye tras la segunda iteración
+
+
+Entrenamiento completo de la red
+• Aplicad el mismo procedimiento al conjunto de datos Admissions.csv
+• Entrenad la red durante varias iteraciones.
+• Representad la evolución de la función de pérdida

@@ -1,0 +1,509 @@
+---
+title: "Lab: Decision Trees for Classification and Regression"
+subtitle: "A guided practical session with questions"
+author: "Alex Sánchez"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    code_folding: show
+    fig_width: 8
+    fig_height: 6
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  comment = NA
+)
+```
+
+# Learning goals
+
+This lab is intended to provide an active exercise on classification and regression trees to illustrate how they can be built and used, interpreted and applied.
+
+The main goal is not only to fit a decision tree, but to understand:
+
+1. how a tree partitions the predictor space;
+2. how a fitted tree produces class predictions and class probabilities;
+3. why training error is not enough to assess prediction performance;
+4. how pruning controls model complexity;
+5. how the same ideas change when the response is quantitative rather than categorical.
+
+The lab is intentionally written so that most questions are transferable to any similar dataset. The default dataset used here is the Pima Indians diabetes dataset, but the structure can be reused with another classification dataset with minimal changes.
+
+
+**Note on the questions.** Questions are numbered automatically using Markdown ordered lists. Some optional questions are kept in the source file as HTML comments. To recover one of them, simply remove the comment delimiters `<!--` and `-->`; the list will be renumbered automatically when the document is rendered.
+
+# Packages
+
+```{r packages}
+packages <- c("mlbench", "rpart", "rpart.plot", "dplyr", "knitr")
+
+for (pkg in packages) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+# Part 1. Classification tree
+
+## 1.1 Data and prediction problem
+
+In this example we use the `PimaIndiansDiabetes2` dataset from the `mlbench` package.
+
+```{r load-data}
+data("PimaIndiansDiabetes2", package = "mlbench")
+mydataset <- PimaIndiansDiabetes2
+```
+
+The response variable is `diabetes`, a binary factor indicating whether each individual is classified as diabetes-positive or diabetes-negative.
+
+```{r inspect-data}
+dplyr::glimpse(mydataset)
+summary(mydataset)
+```
+
+## Questions
+
+1. What is the response variable? Is this a classification or a regression problem?
+
+1. Identify at least three predictors. For each one, indicate whether it is quantitative or categorical.
+
+1. Before fitting a tree, inspect the data. Are there missing values? If so, in which variables? Why could missing values matter for model fitting and model assessment?
+
+> Write your answers here or, if available, in the online form provided for the exercise
+
+## 1.2 Minimal preprocessing
+
+Given this is a classroom lab, we will remove all missing values and use only *complete cases*. This is not necessarily the best strategy in a real analysis, but it keeps the focus on tree construction and model assessment.
+
+```{r complete-cases}
+mydataset_cc <- na.omit(mydataset)
+
+dim(mydataset)
+dim(mydataset_cc)
+
+table(mydataset$diabetes)
+table(mydataset_cc$diabetes)
+```
+
+## Questions
+
+1. What is the consequence of using `na.omit()`? In a real study, what alternative preprocessing strategy could be considered?
+
+> Write your answers here or, if available, in the online form provided for the exercise
+
+## 1.3 Train/test split
+
+We split the dataset into training and test sets. The model will be fitted using the training set and evaluated using the test set.
+
+```{r train-test-split}
+set.seed(123)
+
+prop_train <- 0.70
+n <- nrow(mydataset_cc)
+train_id <- sample(seq_len(n), size = floor(prop_train * n))
+
+train_data <- mydataset_cc[train_id, ]
+test_data  <- mydataset_cc[-train_id, ]
+
+nrow(train_data)
+nrow(test_data)
+
+table(train_data$diabetes)
+table(test_data$diabetes)
+```
+
+## Questions
+
+1. Why do we split the data into training and test sets instead of evaluating the tree on the same data used to fit it?
+
+1. Check whether the class distribution is similar in the training and test sets. Why could a very unbalanced split be problematic?
+
+> Write your answers here or, if available, in the online form provided for the exercise.
+
+# Part 2. Fitting and interpreting a classification tree
+
+## 2.1 Fit an initial tree
+
+We fit a classification tree using `rpart()`.
+
+```{r fit-classification-tree}
+require(rpart)
+tree_class <- rpart(
+  diabetes ~ ., 
+  data = train_data,
+  method = "class",
+  control = rpart.control(cp = 0.001)
+)
+
+tree_class
+```
+
+```{r plot-classification-tree, fig.height=7, fig.width=10}
+require(rpart.plot)
+rpart.plot(tree_class, extra = 104, fallen.leaves = TRUE, cex = 0.7)
+```
+
+The argument `extra = 104` displays the predicted class, the class probabilities and the percentage of observations in each node.
+
+## Questions
+
+1. Which predictor appears in the root node? What does this suggest about its predictive role in this fitted tree?
+
+1. Choose one internal split. Explain it as a decision rule of the form: "if predictor X is below/above a threshold, then observations go to...".
+
+<!--
+1. Choose one terminal node. What is the predicted class in that node? What are the estimated class probabilities?
+-->
+
+1. Explain, in your own words, how the tree transforms a vector of predictors $x$ into a class prediction $\hat{y}$.
+
+> Write your answers here or, if available, in the online form provided for the exercise.
+
+# Part 3. Training error, test error and confusion matrix
+
+## 3.1 Predictions on train and test data
+
+```{r classification-predictions}
+pred_train_class <- predict(tree_class, train_data, type = "class")
+pred_test_class  <- predict(tree_class, test_data, type = "class")
+
+conf_train <- table(Predicted = pred_train_class, Observed = train_data$diabetes)
+conf_test  <- table(Predicted = pred_test_class, Observed = test_data$diabetes)
+
+conf_train
+conf_test
+
+train_error <- mean(pred_train_class != train_data$diabetes)
+test_error  <- mean(pred_test_class  != test_data$diabetes)
+
+train_error
+test_error
+```
+
+## 3.2 Accuracy, sensitivity and specificity
+
+For a binary classification problem, accuracy is often not enough. We also compute sensitivity and specificity. In this dataset, the positive class is coded as `pos`.
+
+```{r classification-metrics}
+classification_metrics <- function(observed, predicted, positive = "pos") {
+  observed <- factor(observed)
+  predicted <- factor(predicted, levels = levels(observed))
+  tab <- table(Predicted = predicted, Observed = observed)
+  
+  if (!positive %in% colnames(tab)) {
+    stop("The specified positive class is not present in the observed data.")
+  }
+  
+  negative <- setdiff(colnames(tab), positive)[1]
+  
+  TP <- tab[positive, positive]
+  TN <- tab[negative, negative]
+  FP <- tab[positive, negative]
+  FN <- tab[negative, positive]
+  
+  data.frame(
+    accuracy = (TP + TN) / sum(tab),
+    sensitivity = TP / (TP + FN),
+    specificity = TN / (TN + FP),
+    test_error = 1 - (TP + TN) / sum(tab)
+  )
+}
+
+classification_metrics(train_data$diabetes, pred_train_class, positive = "pos")
+classification_metrics(test_data$diabetes, pred_test_class, positive = "pos")
+```
+
+## Questions
+
+1. Compare the training error and the test error. Which one is smaller? Is this expected?
+
+1. Why is the training error usually an optimistic estimate of prediction error?
+
+<!--
+1. Interpret the confusion matrix on the test set. Which type of error is more frequent: false positives or false negatives?
+-->
+
+1. In a biomedical classification problem, why might sensitivity and specificity be more informative than accuracy alone?
+
+<!--
+1. If you repeated the train/test split with another random seed, would you expect exactly the same tree and exactly the same test error? Why?
+-->
+
+> Write your answers here or, if available, in the online form provided for the exercise.
+
+# Part 4. Cost-complexity pruning
+
+A large tree may fit the training data too closely. Cost-complexity pruning controls tree complexity by balancing goodness of fit and tree size.
+
+In `rpart`, the complexity parameter is called `cp`. Larger values of `cp` lead to smaller trees.
+
+## 4.1 Cross-validation table
+
+```{r cp-table}
+printcp(tree_class)
+plotcp(tree_class)
+```
+
+The `cptable` contains, among others:
+
+- `nsplit`: number of splits;
+- `rel error`: relative training error;
+- `xerror`: cross-validated error;
+- `xstd`: standard error of the cross-validated error;
+- `CP`: complexity parameter.
+
+## Questions
+
+<!--
+1. What happens to the training error as the number of splits increases? Is this surprising?
+-->
+
+1. What happens to the cross-validated error as the tree becomes more complex? Does it always decrease?
+
+1. Why is cross-validated error more relevant than training error for choosing the size of the tree?
+
+> Write your answers here or, if available, in the online form provided for the exercise.
+
+## 4.2 Select a pruned tree
+
+We first select the tree with minimum cross-validated error.
+
+```{r select-cp-min}
+cp_table <- tree_class$cptable
+best_row <- which.min(cp_table[, "xerror"])
+best_cp <- cp_table[best_row, "CP"]
+best_cp
+```
+
+```{r prune-classification-tree}
+pruned_class <- prune(tree_class, cp = best_cp)
+
+rpart.plot(pruned_class, extra = 104, fallen.leaves = TRUE, cex = 0.8)
+```
+
+## 4.3 Compare original and pruned trees
+
+```{r compare-classification-trees}
+pred_test_pruned <- predict(pruned_class, test_data, type = "class")
+
+conf_test_pruned <- table(Predicted = pred_test_pruned, Observed = test_data$diabetes)
+conf_test_pruned
+
+metrics_unpruned <- classification_metrics(test_data$diabetes, pred_test_class, positive = "pos")
+metrics_pruned   <- classification_metrics(test_data$diabetes, pred_test_pruned, positive = "pos")
+
+comparison_class <- rbind(
+  unpruned = metrics_unpruned,
+  pruned   = metrics_pruned
+)
+
+knitr::kable(round(comparison_class, 3))
+```
+
+## Questions
+
+1. Has pruning reduced the size of the tree? Describe the main structural change.
+
+<!--
+1. Has pruning improved the test error in this particular split?
+
+1. Suppose the pruned tree has a slightly worse test error but is much smaller. Could it still be preferable? Explain why.
+-->
+
+1. Explain pruning as a form of regularization. What is being penalized?
+
+<!--
+1. What is the connection between pruning and the bias-variance trade-off?
+-->
+
+> Write your answers here or, if available, in the online form provided for the exercise.
+
+# Part 5. Regression trees using a quantitative response
+
+We now illustrate the same ideas for a regression tree. Instead of predicting the binary response, we use `glucose` as a quantitative response.
+
+This section is shorter because the aim is not to repeat the whole analysis, but to highlight what changes when the response is numerical.
+
+## 5.1 Define a regression dataset
+
+We remove the original categorical response `diabetes` from the predictors and use `glucose` as the response.
+
+```{r regression-data}
+reg_data <- mydataset_cc |>
+  dplyr::select(-diabetes)
+
+set.seed(123)
+n_reg <- nrow(reg_data)
+train_id_reg <- sample(seq_len(n_reg), size = floor(prop_train * n_reg))
+
+train_reg <- reg_data[train_id_reg, ]
+test_reg  <- reg_data[-train_id_reg, ]
+```
+
+## Questions
+
+<!--
+1. Why should `diabetes` be removed from the predictors if we use `glucose` as the response in this illustrative regression exercise? What would happen if we kept it?
+-->
+
+> Write your answer here.
+
+## 5.2 Fit a regression tree
+
+```{r fit-regression-tree}
+tree_reg <- rpart(
+  glucose ~ ., 
+  data = train_reg,
+  method = "anova",
+  control = rpart.control(cp = 0.001)
+)
+
+print(tree_reg)
+```
+
+```{r plot-regression-tree, fig.height=7, fig.width=10}
+rpart.plot(tree_reg, fallen.leaves = TRUE, cex = 0.75)
+```
+
+## Questions
+
+1. What is predicted in each terminal node of a regression tree: a class, a probability, or a numerical value?
+
+<!--
+1. Choose one terminal node. What numerical prediction is assigned to observations falling into that node?
+-->
+
+1. Compare the interpretation of a terminal node in a classification tree and in a regression tree.
+
+> Write your answers here or, if available, in the online form provided for the exercise.
+
+## 5.3 Prediction error for a regression tree
+
+For regression problems, the usual error measures are based on the difference between observed and predicted numerical values.
+
+```{r regression-prediction-error}
+pred_train_reg <- predict(tree_reg, train_reg)
+pred_test_reg  <- predict(tree_reg, test_reg)
+
+mse_train <- mean((train_reg$glucose - pred_train_reg)^2)
+mse_test  <- mean((test_reg$glucose  - pred_test_reg)^2)
+
+rmse_train <- sqrt(mse_train)
+rmse_test  <- sqrt(mse_test)
+
+mse_train
+mse_test
+rmse_train
+rmse_test
+```
+
+```{r observed-vs-predicted, fig.height=5, fig.width=6}
+plot(
+  pred_test_reg, test_reg$glucose,
+  xlab = "Predicted glucose",
+  ylab = "Observed glucose",
+  main = "Regression tree: observed vs predicted values"
+)
+abline(0, 1, lty = 2)
+```
+
+## Questions
+
+1. Why do we use MSE or RMSE instead of accuracy for a regression tree?
+
+<!--
+1. Compare training RMSE and test RMSE. What would a large difference suggest?
+
+1. In the observed-versus-predicted plot, what would perfect predictions look like?
+-->
+
+> Write your answers here or, if available, in the online form provided for the exercise.
+
+## 5.4 Pruning the regression tree
+
+```{r prune-regression-tree}
+printcp(tree_reg)
+plotcp(tree_reg)
+
+cp_table_reg <- tree_reg$cptable
+best_row_reg <- which.min(cp_table_reg[, "xerror"])
+best_cp_reg <- cp_table_reg[best_row_reg, "CP"]
+
+pruned_reg <- prune(tree_reg, cp = best_cp_reg)
+
+rpart.plot(pruned_reg, fallen.leaves = TRUE, cex = 0.75)
+```
+
+```{r compare-regression-trees}
+pred_test_reg_pruned <- predict(pruned_reg, test_reg)
+
+rmse_test_pruned <- sqrt(mean((test_reg$glucose - pred_test_reg_pruned)^2))
+
+comparison_reg <- data.frame(
+  model = c("unpruned", "pruned"),
+  test_RMSE = c(rmse_test, rmse_test_pruned),
+  terminal_nodes = c(
+    sum(tree_reg$frame$var == "<leaf>"),
+    sum(pruned_reg$frame$var == "<leaf>")
+  )
+)
+
+knitr::kable(comparison_reg, digits = 3)
+```
+
+## Questions
+
+<!--
+1. Did pruning reduce the number of terminal nodes in the regression tree?
+
+1. Did pruning improve the test RMSE in this particular split?
+
+1. Why can a simpler tree be preferable even if its test RMSE is very similar to that of a larger tree?
+-->
+
+> Write your answers here or, if available, in the online form provided for the exercise.
+
+# Part 6. Final synthesis
+
+Answer the following questions without running more code.
+
+## Questions
+
+<!--
+1. In what sense is a decision tree an interpretable model?
+
+1. What are the main limitations of a single decision tree?
+
+1. What aspects of the analysis would change if the dataset had many more predictors than observations?
+
+1. Explain the difference between stopping a tree early and pruning a tree after growing it.
+-->
+
+1. Summarize, in 5-6 lines, the full workflow followed in this lab: data preparation, train/test split, model fitting, prediction error estimation, pruning and final interpretation.
+
+> Write your answers here.
+
+# Optional extension for another dataset
+
+If another dataset is used instead of Pima, the core workflow remains the same:
+
+1. define the response variable;
+2. identify whether the task is classification or regression;
+3. split the data into training and test sets;
+4. fit an initial tree;
+5. interpret the main splits and terminal nodes;
+6. estimate test error using an appropriate metric;
+7. use cross-validation to choose the degree of pruning;
+8. compare the original and pruned trees;
+9. justify the final model in terms of prediction and interpretability.

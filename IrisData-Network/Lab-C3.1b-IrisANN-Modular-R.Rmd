@@ -1,0 +1,463 @@
+---
+title: "Implementation of a Neural Network for Iris dataset classification in R"
+author: "Introduction to Statistical Learning"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+# Implementation of a Neural Network for Iris dataset classification in R
+
+This notebook implements a simple multilayer neural network for classifying flower species in the Iris dataset.
+
+The code is modularized into functions to facilitate understanding and step-by-step execution, following the same structure as the Python lab.
+
+## Introduction
+
+In this lab we build a simple Neural Network, implementing every function from scratch in R.
+
+The problem to be solved is the identification (*classification*, *prediction*) of the species of an Iris flower using the dimensions of the petals and sepals.
+
+We follow the usual workflow of a machine learning analysis:
+
+1. Load and preprocess the data.
+2. Build the functions for the neural network.
+3. Train the model.
+4. Evaluate the performance on test data.
+
+Many of these functions are available in high-level libraries, but here they are written from scratch for illustration purposes.
+
+## Importing libraries
+
+```{r}
+# This notebook only uses base R functions.
+# ggplot2 is used only for nicer plots if available.
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  library(ggplot2)
+}
+```
+
+## Load and preprocess data
+
+### Reading the data
+
+```{r}
+# Read data from csv.
+# The file must be in the working directory.
+iris <- read.csv("IrisData1.csv", stringsAsFactors = FALSE)
+
+selected_rows <- c(1, 2, 51, 52, 101, 102)
+iris[selected_rows, ]
+```
+
+### Dataset verification
+
+A standard step in the data analysis pipeline is to check the data, in order to detect possible problematic values such as missing data, outliers, or coding mistakes.
+
+```{r}
+verify_dataset <- function(data) {
+  if (any(is.na(data))) {
+    stop("Data contain missing values.")
+  }
+  cat("Dataset is complete. No missing values. Ok\n")
+  cat("Class labels:\n")
+  print(table(data$Species))
+}
+
+verify_dataset(iris)
+```
+
+### One-hot encoding function
+
+The target variable `Species` has three categorical classes:
+
+- `Iris-setosa`
+- `Iris-versicolor`
+- `Iris-virginica`
+
+Neural networks require numerical outputs. We therefore transform the class labels into a one-hot encoded matrix.
+
+```{r}
+to_one_hot <- function(labels) {
+  labels <- as.factor(labels)
+  classes <- levels(labels)
+  y <- matrix(0, nrow = length(labels), ncol = length(classes))
+  colnames(y) <- classes
+  y[cbind(seq_along(labels), as.integer(labels))] <- 1
+  return(y)
+}
+
+# Example of one-hot encoding for selected rows
+to_one_hot(iris$Species[selected_rows])
+```
+
+### Data normalization function
+
+The training of neural networks can be negatively affected by input features with very different scales.
+
+To keep this R lab aligned with the Python lab, we use row-wise L2 normalization: each observation is divided by its Euclidean norm.
+
+```{r}
+normalize_rows <- function(X) {
+  X <- as.matrix(X)
+  norm <- sqrt(rowSums(X^2))
+  norm[norm == 0] <- 1
+  X / norm
+}
+```
+
+### Running the preprocessing steps
+
+```{r}
+# Select numeric features
+selected_features <- c("Sepal_Length", "Sepal_Width", "Petal_Length", "Petal_Width")
+X <- as.matrix(iris[, selected_features])
+X <- normalize_rows(X)
+
+# One-hot encode the outcome
+Y <- to_one_hot(iris$Species)
+
+# Show normalized features and encoded outcome for selected rows
+X[selected_rows, ]
+Y[selected_rows, ]
+```
+
+### Test-training split function
+
+```{r}
+split_dataset_test_train <- function(X, Y, train_size = 0.7, seed = 123456) {
+  set.seed(seed)
+  n <- nrow(X)
+  idx <- sample(seq_len(n))
+  n_train <- floor(train_size * n)
+  train_idx <- idx[seq_len(n_train)]
+  test_idx <- idx[(n_train + 1):n]
+  list(
+    X_train = X[train_idx, , drop = FALSE],
+    Y_train = Y[train_idx, , drop = FALSE],
+    X_test = X[test_idx, , drop = FALSE],
+    Y_test = Y[test_idx, , drop = FALSE]
+  )
+}
+```
+
+### Split the data
+
+```{r}
+train_test_data <- split_dataset_test_train(X, Y, train_size = 0.7, seed = 123456)
+
+X_train <- train_test_data$X_train
+Y_train <- train_test_data$Y_train
+X_test <- train_test_data$X_test
+Y_test <- train_test_data$Y_test
+
+X_train[1:6, ]
+Y_train[1:6, ]
+```
+
+## Training process
+
+The network is trained by a succession of forward and backward steps, continuously adjusting the model parameters to minimize the loss.
+
+- **Forward propagation**: computes activations in each layer.
+- **Loss computation**: measures the discrepancy between predicted and true values.
+- **Backpropagation**: computes gradients by applying the chain rule.
+- **Weight update**: adjusts the parameters using gradient descent.
+
+This process is repeated over multiple epochs until convergence or a stopping criterion is met.
+
+## Activation functions
+
+```{r}
+sigmoid <- function(x) {
+  1 / (1 + exp(-x))
+}
+
+sigmoid_deriv_from_activation <- function(a) {
+  # If a = sigmoid(z), then sigmoid'(z) = a * (1 - a)
+  a * (1 - a)
+}
+
+softmax <- function(x) {
+  # Numerically stable softmax, applied row-wise
+  x_shift <- x - apply(x, 1, max)
+  exp_x <- exp(x_shift)
+  exp_x / rowSums(exp_x)
+}
+```
+
+## Forward propagation
+
+Forward propagation computes the activations in each layer of the network.
+
+For a network with one hidden layer:
+
+$$
+Z_h = XW_0 + b_0,
+\qquad
+A_h = \sigma(Z_h)
+$$
+
+$$
+Z_o = A_h W_1 + b_1,
+\qquad
+A_o = \operatorname{softmax}(Z_o)
+$$
+
+where $A_h$ and $A_o$ are respectively the hidden-layer and output-layer activations.
+
+```{r}
+forward_propagation <- function(X, W0, b0, W1, b1) {
+  Z_h <- X %*% W0 + matrix(b0, nrow = nrow(X), ncol = length(b0), byrow = TRUE)
+  A_h <- sigmoid(Z_h)
+  Z_o <- A_h %*% W1 + matrix(b1, nrow = nrow(A_h), ncol = length(b1), byrow = TRUE)
+  A_o <- softmax(Z_o)
+  list(A_h = A_h, A_o = A_o)
+}
+```
+
+## Backpropagation
+
+Backpropagation propagates the error backward to adjust weights using gradient descent.
+
+For the output layer with softmax and cross-entropy:
+
+$$
+\delta_o = A_o - Y
+$$
+
+For the hidden layer:
+
+$$
+\delta_h = (\delta_o W_1^T) \odot \sigma'(Z_h)
+$$
+
+Since the function below receives $A_h = \sigma(Z_h)$, we use:
+
+$$
+\sigma'(Z_h) = A_h(1-A_h)
+$$
+
+```{r}
+backpropagation <- function(X, Y, A_h, A_o, W1) {
+  delta_o <- A_o - Y
+  dcost_dah <- delta_o %*% t(W1)
+  delta_h <- dcost_dah * sigmoid_deriv_from_activation(A_h)
+  list(delta_o = delta_o, delta_h = delta_h)
+}
+```
+
+## Updating weights and biases
+
+```{r}
+update_weights <- function(X, A_h, delta_o, delta_h, W0, b0, W1, b1, learning_rate) {
+  W1 <- W1 - learning_rate * (t(A_h) %*% delta_o)
+  b1 <- b1 - learning_rate * colSums(delta_o)
+  W0 <- W0 - learning_rate * (t(X) %*% delta_h)
+  b0 <- b0 - learning_rate * colSums(delta_h)
+  list(W0 = W0, b0 = b0, W1 = W1, b1 = b1)
+}
+```
+
+## Initialization of weights and biases
+
+Before training the network, weights and biases must be initialized.
+
+Weights are randomly initialized to break symmetry in learning.
+
+```{r}
+initialize_network <- function(input_size, hidden_size, output_size, seed = 654321) {
+  set.seed(seed)
+  W0 <- matrix(runif(input_size * hidden_size, min = -1, max = 1),
+               nrow = input_size, ncol = hidden_size)
+  W1 <- matrix(runif(hidden_size * output_size, min = -1, max = 1),
+               nrow = hidden_size, ncol = output_size)
+  b0 <- rnorm(hidden_size)
+  b1 <- rnorm(output_size)
+  list(W0 = W0, b0 = b0, W1 = W1, b1 = b1)
+}
+```
+
+## Loss function
+
+```{r}
+cross_entropy_loss <- function(Y, A_o, eps = 1e-9) {
+  -mean(rowSums(Y * log(A_o + eps)))
+}
+```
+
+## Neural network training
+
+After setting the weights to their initial values, the neural network is trained by iterating over the data.
+
+At each epoch and batch:
+
+1. Compute predictions by forward propagation.
+2. Compute errors by backpropagation.
+3. Update weights and biases.
+
+The process stops when convergence or a fixed number of epochs is reached.
+
+```{r}
+train_neural_network <- function(X_train, Y_train, epochs, learning_rate, batch_size, params) {
+  W0 <- params$W0
+  b0 <- params$b0
+  W1 <- params$W1
+  b1 <- params$b1
+  
+  num_samples <- nrow(X_train)
+  num_batches <- ceiling(num_samples / batch_size)
+  loss_history <- c()
+  
+  for (epoch in seq_len(epochs)) {
+    for (batch_idx in seq_len(num_batches)) {
+      batch_start <- (batch_idx - 1) * batch_size + 1
+      batch_end <- min(batch_idx * batch_size, num_samples)
+      
+      X_batch <- X_train[batch_start:batch_end, , drop = FALSE]
+      Y_batch <- Y_train[batch_start:batch_end, , drop = FALSE]
+      
+      # Forward propagation
+      fwd <- forward_propagation(X_batch, W0, b0, W1, b1)
+      
+      # Backpropagation
+      bp <- backpropagation(X_batch, Y_batch, fwd$A_h, fwd$A_o, W1)
+      
+      # Weight update
+      updated <- update_weights(X_batch, fwd$A_h, bp$delta_o, bp$delta_h,
+                                W0, b0, W1, b1, learning_rate)
+      W0 <- updated$W0
+      b0 <- updated$b0
+      W1 <- updated$W1
+      b1 <- updated$b1
+    }
+    
+    # Compute loss every 100 epochs, and also at the first epoch
+    if (epoch == 1 || epoch %% 100 == 0) {
+      fwd_all <- forward_propagation(X_train, W0, b0, W1, b1)
+      loss <- cross_entropy_loss(Y_train, fwd_all$A_o)
+      loss_history <- c(loss_history, loss)
+      cat(sprintf("Epoch %d, Loss: %.4f\n", epoch, loss))
+    }
+  }
+  
+  list(params = list(W0 = W0, b0 = b0, W1 = W1, b1 = b1),
+       loss_history = loss_history)
+}
+```
+
+## Training the network in practice
+
+### Initialize the network and hyperparameters
+
+We set:
+
+- input layer: 4 nodes (the four Iris measurements)
+- hidden layer: 5 nodes
+- output layer: 3 nodes (the three species)
+
+Additionally, we set the training hyperparameters:
+
+- learning rate
+- batch size
+- number of epochs
+
+```{r}
+input_size <- ncol(X_train)
+hidden_size <- 5
+output_size <- ncol(Y_train)
+
+my_params <- initialize_network(input_size, hidden_size, output_size, seed = 654321)
+
+learning_rate <- 0.01
+batch_size <- 10
+epochs <- 1000
+```
+
+### Train the network
+
+```{r}
+trained <- train_neural_network(
+  X_train = X_train,
+  Y_train = Y_train,
+  epochs = epochs,
+  learning_rate = learning_rate,
+  batch_size = batch_size,
+  params = my_params
+)
+
+trainedNet <- trained$params
+loss_history <- trained$loss_history
+```
+
+## Check model performance
+
+```{r}
+plot(loss_history, type = "l",
+     xlab = "Logged training step",
+     ylab = "Loss",
+     main = "Training Loss over Time")
+```
+
+## Evaluate network on test data
+
+```{r}
+evaluate_network <- function(params, X_test) {
+  fwd <- forward_propagation(X_test, params$W0, params$b0, params$W1, params$b1)
+  # Return class index for each row
+  max.col(fwd$A_o, ties.method = "first")
+}
+
+y_pred <- evaluate_network(trainedNet, X_test)
+y_actual <- max.col(Y_test, ties.method = "first")
+
+cm <- table(
+  Actual = colnames(Y_test)[y_actual],
+  Predicted = colnames(Y_test)[y_pred]
+)
+
+cm
+```
+
+### Normalized confusion matrix
+
+```{r}
+cm_norm <- prop.table(cm, margin = 1)
+round(cm_norm, 3)
+```
+
+```{r}
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  df_cm <- as.data.frame(cm_norm)
+  ggplot(df_cm, aes(x = Predicted, y = Actual, fill = Freq)) +
+    geom_tile() +
+    geom_text(aes(label = round(Freq, 2)), size = 5) +
+    labs(title = "Normalized Confusion Matrix", x = "Predicted", y = "Actual") +
+    theme_minimal()
+} else {
+  image(as.matrix(cm_norm), main = "Normalized Confusion Matrix")
+}
+```
+
+## Predicting new observations
+
+The following function normalizes a new observation using the same row-wise normalization used during training and returns the predicted species.
+
+```{r}
+predict_species <- function(params, measurements) {
+  measurements <- matrix(as.numeric(measurements), nrow = 1)
+  measurements_norm <- normalize_rows(measurements)
+  fwd <- forward_propagation(measurements_norm, params$W0, params$b0, params$W1, params$b1)
+  predicted_class <- which.max(fwd$A_o[1, ])
+  list(
+    probabilities = fwd$A_o,
+    predicted_species = colnames(Y)[predicted_class]
+  )
+}
+
+# Example
+predict_species(trainedNet, c(5.1, 3.5, 1.4, 0.2))
+```
+

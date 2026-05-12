@@ -1,0 +1,252 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{amsmath}
+\usepackage{float}
+\usepackage{booktabs}
+
+\title{Statistical Learning - Redes Neuronales Artificiales}
+\author{Pere Carranza, Liliu Martínez, Bernat Pol}
+\date{16 de Mayo del 2026}
+
+\begin{document}
+
+\maketitle
+\section{Utilizad las fórmulas siguientes para el cálculo de cada paso de la red}
+
+\subsection*{Contextualización teórica}
+
+Para los cálculos numéricos, hemos distingido en:
+\subsubsection*{Forward propagation (Iteración 1)}
+\begin{itemize}
+    \item Capa oculta:
+    \begin{itemize}
+        \item preactivaciones z(1)
+        \item activaciones a(1)
+\end{itemize}
+
+
+\item Capa de salida:
+\begin{itemize}
+    \item preactivación z(2)
+    \item predicción *y
+\end{itemize}
+\end{itemize}
+
+\subsubsection*{Cálculo de la función de pérdida}
+Utilizamos como función de pérdida la \textbf{binary cross-entropy}:
+
+\[
+L(y, \hat{y}) = -\left[ y \log(\hat{y}) + (1 - y)\log(1 - \hat{y}) \right]
+\]
+
+\subsubsection*{Backpropagation (Iteración 1)}
+Error en la capa de salida:
+
+\[
+\delta^{(2)} = \hat{y} - y
+\]
+Esta expresión es válida al combinar la función sigmoide con la cross-entropy.
+
+Error en la capa oculta:
+
+
+
+\[
+\delta^{(1)} = (W^{(2)})^T \delta^{(2)} \cdot \sigma'(z^{(1)})
+\]
+
+
+
+Para la función sigmoidea se tiene:
+
+
+
+\[
+\sigma'(z) = \sigma(z)(1 - \sigma(z))
+\]
+
+\subsubsection*{Actualización de pesos}
+Con los valores calculados podemos actualizar todos los pesos y sesgos usando:
+\[
+W \leftarrow W - \eta \frac{\partial L}{\partial W},
+\qquad
+b \leftarrow b - \eta \frac{\partial L}{\partial b}
+\]
+
+\subsection*{Resolución del ejercicio}
+
+Antes de cualquier cálculo, necesitamos tres cosas; los datos de entrada, la etiqueta real y los pesos iniciales. 
+
+Para este ejercicio, hemos usado la segunda observación del listado. Esta observación nos dice que la persona ha sido admitida, ha sacado una nota de Graduate Record Examination (GRE) igual a 660 y una Grade Point Average (GPA) igual a 3.67.
+
+Para que la sigmoide no se sature, el primer paso realizado ha sido normalizar los datos, obteniendo valores entre 0 y 1. Por lo tanto:
+
+\par $x1 = gre = 660 \rightarrow x1 = 660/800 = 0.825$
+\par $x2 = gpa = 3.67 \rightarrow x2 = 3.67/4 = 0.9175$
+
+Por otro lado, la tasa de aprendizaje la hemos definido de 0.1, dado que si la eligiéramos muy grande, el aprendizaje puede ser demasiado rápido mientras que si es muy pequeña, los pasos son diminutos.
+
+También debemos destacar la arquitectura de la red neuronal, que en este caso esta configurada por 2 variables de entrada (x1 y x2, definidas anteriormente), 1 capa oculta con dos neuronas y una capa de salida. Además, todas las neuronas utilizan la función de activación sigmoidea.
+
+Para los pesos iniciales y los sesgos, estos, se generan de forma aleatoria con set.seed (en nuestro caso, hemos elegido set.seed = 4836), pero además, lo hemos hecho respetando los intervalos $[-0.2, 0.2]$ para los pesos y $[-0.5,0.5]$ para los sesgos. Los valores obtenidos han sido los siguientes: 
+ 
+\[
+  W^{(1)} = \begin{pmatrix} -0.0520 & 0.0089 \\ -0.0197 & 0.0579 \end{pmatrix}, \quad
+  \mathbf{b}^{(1)} = \begin{pmatrix} 0.0467 \\ -0.0201 \end{pmatrix}
+\]
+\[
+  W^{(2)} = \begin{pmatrix} 0.0444 & -0.1927\end{pmatrix}, \quad
+  b^{(2)} = -0.0013
+\]
+
+\section*{Iteración 1}
+ 
+\subsection*{Forward propagation}
+ 
+\subsubsection*{Capa oculta --- preactivaciones $z^{(1)}$}
+ 
+Cada neurona oculta calcula una combinación lineal de las entradas tal que:
+\[
+  z^{(1)} = W^{(1)}\,\mathbf{x} + \mathbf{b}^{(1)}
+\]
+
+En este caso, para calcular $z^{(1)}$, hemos sustituido los valores obtenidos:
+\begin{align*}
+  z^{(1)}_1 &= -0.0520 \times 0.825 + 0.0089 \times 0.9175 + 0.0467 \\
+             &= -0.0429 + 0.0082 + 0.0467 = \mathbf{0.0120}
+             \\[6pt]
+  z^{(1)}_2 &= -0.0197 \times 0.825 + (0.0579) \times 0.9175 + (-0.0201) \\
+             &= - 0.0163 + 0.0531 - 0.0201 = \mathbf{0.0168}
+\end{align*}
+
+\subsubsection*{Capa oculta --- activaciones $a^{(1)}$}
+Para calcular las activaciones de la capa oculta, lo hemos calculado tal que $a^{(1)} = \sigma(z^{(1)})$
+ 
+\begin{align*}
+  a^{(1)}_1 &= \sigma(0.0120) = \frac{1}{1+e^{-0.0120}} = \mathbf{0.5030} \\
+  a^{(1)}_2 &= \sigma(0.0167)  = \frac{1}{1+e^{-0.0167}}  = \mathbf{0.5042}
+\end{align*}
+
+\subsubsection*{Capa de salida --- preactivación $z^{(2)}$ y predicción $\hat{y}$}
+Por otro lado, también hemos calculado la preactivación de la capa de salida.
+
+\begin{align*}
+  z^{(2)} &= 0.0444 \times 0.5030 - (0.1927) \times 0.5042 + (-0.0013) \\
+           &= 0.0232 - 0.0972 - 0.0013 = \mathbf{-0.0762} \\[6pt]
+  \hat{y} &= \sigma(-0.0762) = \frac{1}{1+e^{0.0762}} = \mathbf{0.4810}
+\end{align*}
+
+Por lo tanto, la red predice una probabilidad de admisión del $48.10\%$. Dado que la etiqueta real es $y = 1$, existe un error que hay que corregir y mejorar la red.
+
+\subsection*{Función de pérdida}
+ 
+Se utiliza la \emph{binary cross-entropy}:
+\[
+  L(y,\hat{y}) = -\bigl[y\log(\hat{y}) + (1-y)\log(1-\hat{y})\bigr]
+\]
+ 
+Como $y = 1$, el segundo término se anula:
+\[
+  L_1 = -\log(0.4810) = \mathbf{0.3178}
+\]
+
+\subsection*{Backpropagation}
+ 
+\subsubsection*{Error en la capa de salida}
+ 
+La combinación sigmoide + cross-entropy simplifica el gradiente a:
+\[
+  \delta^{(2)} = \hat{y} - y = 0.4810 - 1 = \mathbf{-0.5190}
+\]
+
+\subsubsection*{Derivada de la sigmoide en $z^{(1)}$}
+ 
+\begin{align*}
+  \sigma'(z^{(1)}_1) &= a^{(1)}_1\,(1 - a^{(1)}_1) = 0.5030 \times 0.4970 = \mathbf{0.2500} \\
+  \sigma'(z^{(1)}_2) &= a^{(1)}_2\,(1 - a^{(1)}_2) = 0.5042 \times 0.4958 = \mathbf{0.2500}
+\end{align*}
+ 
+\subsubsection*{Error en la capa oculta}
+\[
+  \delta^{(1)} = \bigl(W^{(2)}\bigr)^T \delta^{(2)} \cdot \sigma'(z^{(1)})
+\]
+ 
+\begin{align*}
+  \delta^{(1)}_1 &= 0.0444 \times (-0.5144) \times 0.2495 = \mathbf{-0.0058} \\
+  \delta^{(1)}_2 &= (-0.1927) \times (-0.5144) \times 0.2499 = \mathbf{0.0250}
+\end{align*}
+
+\subsubsection*{Calculo de gradientes}
+ 
+\begin{align*}
+  \frac{\partial L}{\partial W^{(2)}} &= \delta^{(2)} \cdot \bigl(\mathbf{a}^{(1)}\bigr)^T
+    = [-0.5190 \times 0.5030,\;\; -0.5190 \times 0.5042]
+    = [\mathbf{-0.2611},\;\; \mathbf{-0.2617}] \\[4pt]
+  \frac{\partial L}{\partial b^{(2)}} &= \delta^{(2)} = \mathbf{-0.5190} \\[8pt]
+  \frac{\partial L}{\partial W^{(1)}} &= \delta^{(1)} \otimes \mathbf{x}
+    = \begin{pmatrix} -0.0058 \\ 0.0250 \end{pmatrix}
+      \begin{pmatrix} 0.8250 & 0.9175 \end{pmatrix}
+    = \begin{pmatrix} -0.0048 & -0.0053 \\ 0.0206 & 0.0229 \end{pmatrix} \\[4pt]
+  \frac{\partial L}{\partial \mathbf{b}^{(1)}} &= \delta^{(1)}
+    = [\mathbf{-0.0058},\;\; \mathbf{0.0250}]
+\end{align*}
+
+donde $\otimes$ denota el producto exterior.
+ 
+\begin{align*}
+  W^{(1)}_{\text{nuevo}} &=
+    \begin{pmatrix} -0.0520 & 0.0089 \\ -0.0197 & 0.0579 \end{pmatrix}
+    - 0.1 \cdot \begin{pmatrix} -0.0048 & -0.0053 \\ 0.0206 & 0.0229 \end{pmatrix}
+    = \begin{pmatrix} \mathbf{-0.0515} & \mathbf{0.0094} \\ \mathbf{-0.0218} & \mathbf{0.0556} \end{pmatrix} \\[6pt]
+  \mathbf{b}^{(1)}_{\text{nuevo}} &= \begin{pmatrix} 0.0467 \\ -0.0201 \end{pmatrix}
+    - 0.1 \cdot \begin{pmatrix} -0.0058 \\ 0.0250 \end{pmatrix}
+    = \begin{pmatrix} \mathbf{0.0473} \\ \mathbf{-0.0226} \end{pmatrix} \\[6pt]
+  W^{(2)}_{\text{nuevo}} &= \begin{pmatrix} 0.0444 & -0.1927 \end{pmatrix}
+    - 0.1 \cdot \begin{pmatrix} -0.2611 & -0.2617 \end{pmatrix}
+    = \begin{pmatrix} \mathbf{0.0705} & \mathbf{-0.1665} \end{pmatrix} \\[6pt]
+  b^{(2)}_{\text{nuevo}} &= -0.0013 - 0.1 \times (-0.5190) = \mathbf{0.0506}
+\end{align*}
+ 
+\subsection*{Iteración 2 --- Verificación}
+ 
+Se repite el forward propagation con los pesos actualizados:
+ 
+\begin{align*}
+  z^{(1)}_1 &= (-0.051525) \times 0.8250 + 0.009429 \times 0.9175 + 0.047276 = \mathbf{0.013419} \\
+  z^{(1)}_2 &= (-0.021763) \times 0.8250 + 0.055606 \times 0.9175 + (-0.022600) = \mathbf{0.010464} \\[4pt]
+  a^{(1)}_1 &= \sigma(0.013419) = \mathbf{0.503355} \\
+  a^{(1)}_2 &= \sigma(0.010464) = \mathbf{0.502616} \\[4pt]
+  z^{(2)}   &= 0.070506 \times 0.503355 + (-0.166531) \times 0.502616 + 0.050602 = \mathbf{0.002391} \\
+  \hat{y}   &= \sigma(0.002391) = \mathbf{0.500598} \\[4pt]
+  L_2       &= -\log(0.500598) = \mathbf{0.691953}
+\end{align*}
+ 
+\begin{align*}
+  z^{(1)}_1 &= (-0.0515) \times 0.8250 + 0.0094 \times 0.9175 + 0.0473 \\
+             &= -0.0425 + 0.0086 + 0.0473 = \mathbf{0.0134} \\[6pt]
+  z^{(1)}_2 &= (-0.0218) \times 0.8250 + 0.0556 \times 0.9175 + (-0.0226) \\
+             &= -0.0180 + 0.0510 - 0.0226 = \mathbf{0.0104} \\[6pt]
+  a^{(1)}_1 &= \sigma(0.0134) = \mathbf{0.5033} \\
+  a^{(1)}_2 &= \sigma(0.0104) = \mathbf{0.5026} \\[6pt]
+  z^{(2)}   &= 0.0705 \times 0.5033 + (-0.1665) \times 0.5026 + 0.0506 \\
+             &= 0.0355 - 0.0837 + 0.0506 = \mathbf{0.0024} \\[6pt]
+  \hat{y}   &= \sigma(0.0024) = \mathbf{0.5006} \\[6pt]
+  L_2       &= -\log(0.5006) = \mathbf{0.6919}
+\end{align*}
+ 
+\begin{table}[H]
+  \centering
+  \begin{tabular}{cccc}
+    \toprule
+    \textbf{Iteración} & $\hat{y}$ & \textbf{Pérdida $L$} & \textbf{Variación} \\
+    \midrule
+    1 & 0.4810 & 0.7319 & --- \\
+    2 & 0.5006 & 0.6919 & $-0.0400$ \\
+    \bottomrule
+  \end{tabular}
+  \caption{Disminución de la pérdida entre iteraciones.}
+\end{table}
+ 
+La pérdida se reduce en $0.0400$ y la predicción $\hat{y}$ sube de $0.4810$ a $0.5006$, acercándose a $y = 1$. Por lo tanto, esto confirma que la backpropagation y la actualización de pesos son correctas.
+
+\end{document}
